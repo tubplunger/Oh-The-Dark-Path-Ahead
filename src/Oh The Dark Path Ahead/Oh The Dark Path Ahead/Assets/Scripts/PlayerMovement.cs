@@ -26,6 +26,8 @@ public class PlayerMovement : MonoBehaviour
     [Header("Jump")]
     public float jumpForce = 12f;
     public float wallJumpForce = 10f;
+    public float wallJumpHorizontalForce = 12f;
+    public float wallJumpVerticalForce = 10f;
 
     [Header("Wall Slide")]
     public float wallSlideSpeed = 2f;
@@ -59,6 +61,16 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 ledgeStart;
     private Vector3 ledgeEnd;
     private float ledgeT;
+    private float ledgeCooldown = 0.2f;
+    private float ledgeCooldownTimer = 0f;
+
+    private float climbStartBuffer = 0.15f;
+    private float climbStartTimer = 0f;
+
+    private float wallDetachTime = 0.1f;
+    private float wallDetachTimer = 0f;
+    private float wallJumpLockTime = 0.15f;
+    private float wallJumpLockTimer = 0f;
 
     void Awake()
     {
@@ -69,9 +81,27 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        Debug.Log("Vel: " + rb.velocity);
+        Debug.Log("State: " + state);
 
-        rb.gravityScale = (state == MovementState.Climbing) ? 0f : 4f;
+        if (ledgeCooldownTimer > 0)
+        {
+            ledgeCooldownTimer -= Time.deltaTime;
+        }
+
+        if (climbStartTimer > 0)
+        {
+            climbStartTimer -= Time.deltaTime;
+        }
+
+        if (wallDetachTimer > 0)
+        {
+            wallDetachTimer -= Time.deltaTime;
+        }
+
+        if (wallJumpLockTimer > 0)
+        {
+            wallJumpLockTimer -= Time.deltaTime;
+        }
 
         moveInput = Input.GetAxisRaw("Horizontal");
         climbInput = Input.GetAxisRaw("Vertical");
@@ -80,19 +110,20 @@ public class PlayerMovement : MonoBehaviour
 
         wallFront = Physics2D.OverlapCircle(frontCheck.position, checkRadius, wallLayer);
         wallBack = Physics2D.OverlapCircle(backCheck.position, checkRadius, wallLayer);
-        wall = wallFront || wallBack;
+        wall = (wallFront || wallBack) && wallDetachTimer <= 0f && wallJumpLockTimer <= 0f;
 
         bool headClear = !Physics2D.OverlapCircle(ledgeCheck.position, checkRadius, groundLayer);
         bool ledgeClear = !Physics2D.OverlapCircle(topCheck.position, checkRadius, groundLayer);
 
         bool canLedge =
-            wall &&
-            !grounded &&
-            rb.velocity.y <= 0f &&
-            headClear &&
-            ledgeClear &&
-            state != MovementState.LedgeHold &&
-            state != MovementState.LedgeClimb;
+    ledgeCooldownTimer <= 0f &&
+    state == MovementState.Normal &&
+    wall &&
+    !grounded &&
+    rb.velocity.y < -2f &&
+    climbInput >= 0f &&
+    headClear &&
+    ledgeClear;
 
         // ================= LEDGE =================
         if (canLedge)
@@ -120,6 +151,7 @@ public class PlayerMovement : MonoBehaviour
 
             if (Input.GetKeyDown(KeyCode.S))
             {
+                ledgeCooldownTimer = ledgeCooldown;
                 state = MovementState.Normal;
                 rb.gravityScale = 4f;
             }
@@ -134,6 +166,7 @@ public class PlayerMovement : MonoBehaviour
 
             if (ledgeT >= 1f)
             {
+                ledgeCooldownTimer = ledgeCooldown;
                 state = MovementState.Normal;
                 rb.gravityScale = 4f;
             }
@@ -142,40 +175,75 @@ public class PlayerMovement : MonoBehaviour
         }
 
         // ================= CLIMB TOGGLE =================
-        if (Input.GetKeyDown(KeyCode.E) && wall && !grounded)
+        if (Input.GetKeyDown(KeyCode.E) && wall)
         {
-            state = (state == MovementState.Climbing)
-                ? MovementState.Normal
-                : MovementState.Climbing;
+            if (state == MovementState.Climbing)
+            {
+                state = MovementState.Normal;
+            }
+            else
+            {
+                state = MovementState.Climbing;
+                climbStartTimer = climbStartBuffer;
+            }
         }
 
         // ================= CLIMB =================
         if (state == MovementState.Climbing)
         {
-            // Disable gravity while climbing
             rb.gravityScale = 0f;
 
-            // ONLY vertical movement
-            rb.velocity = new Vector2(rb.velocity.x, climbInput * climbSpeed);
+            float vertical = climbInput;
 
-            // If no input → start sliding
-            if (Mathf.Abs(climbInput) < 0.1f)
+            // If player JUST started climbing, give a small upward boost
+            if (climbStartTimer > 0f && Mathf.Abs(climbInput) < 0.1f)
             {
-                state = MovementState.WallSliding;
+                vertical = 0.5f; // auto-start climb
             }
 
-            // If we lose the wall → fall
+            rb.velocity = new Vector2(
+                rb.velocity.x,
+                vertical * climbSpeed
+            );
+
+            if (Mathf.Abs(climbInput) < 0.1f && climbStartTimer <= 0f && rb.velocity.y <= 0f)
+            {
+                state = MovementState.WallSliding;
+                rb.gravityScale = 4f;
+                return;
+            }
+
             if (!wall)
             {
                 state = MovementState.Normal;
                 rb.gravityScale = 4f;
             }
 
+            if (Input.GetButtonDown("Jump"))
+            {
+                state = MovementState.Normal;
+
+                float dir = wallFront ? -1 : 1;
+
+                rb.velocity = new Vector2(
+                    dir * wallJumpHorizontalForce,
+                    wallJumpVerticalForce
+                );
+
+                rb.position += new Vector2(dir * 0.2f, 0f);
+
+                wallDetachTimer = wallDetachTime;
+                wallJumpLockTimer = wallJumpLockTime;
+
+                rb.gravityScale = 4f;
+                return;
+            }
+
             return;
         }
 
         // ================= WALL SLIDE =================
-        if (wall && !grounded && rb.velocity.y < 0 && state == MovementState.Normal)
+        if (wall && !grounded && rb.velocity.y < -0.1f && state == MovementState.Normal)
         {
             state = MovementState.WallSliding;
         }
@@ -184,10 +252,13 @@ public class PlayerMovement : MonoBehaviour
         {
             rb.gravityScale = 4f;
 
-            // Let gravity do the work, just clamp fall speed
+            // ONLY limit fall speed
             if (rb.velocity.y < -wallSlideSpeed)
             {
-                rb.velocity = new Vector2(rb.velocity.x, -wallSlideSpeed);
+                rb.velocity = new Vector2(
+                    rb.velocity.x, // KEEP X
+                    -wallSlideSpeed
+                );
             }
 
             // Wall jump
@@ -196,7 +267,18 @@ public class PlayerMovement : MonoBehaviour
                 state = MovementState.Normal;
 
                 float dir = wallFront ? -1 : 1;
-                rb.velocity = new Vector2(dir * wallJumpForce, jumpForce);
+
+                rb.velocity = new Vector2(
+                    dir * wallJumpHorizontalForce,
+                    wallJumpVerticalForce
+                );
+
+                rb.position += new Vector2(dir * 0.2f, 0f);
+
+                wallDetachTimer = wallDetachTime;
+                wallJumpLockTimer = wallJumpLockTime;
+
+                rb.gravityScale = 4f;
                 return;
             }
 
@@ -217,9 +299,13 @@ public class PlayerMovement : MonoBehaviour
         // ================= NORMAL =================
         if (state == MovementState.Normal)
         {
-            float targetX = moveInput * moveSpeed;
+            rb.gravityScale = 4f;
 
-            rb.velocity = new Vector2(targetX, rb.velocity.y);
+            if (wallJumpLockTimer <= 0f)
+            {
+                float targetX = moveInput * moveSpeed;
+                rb.velocity = new Vector2(targetX, rb.velocity.y);
+            }
 
             if (Input.GetButtonDown("Jump") && grounded)
             {

@@ -61,7 +61,7 @@ Transform:
   m_GameObject: {fileID: 931962413788856925}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.355, y: 0, z: 0}
+  m_LocalPosition: {x: -0.455, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -273,7 +273,7 @@ Rigidbody2D:
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
   m_CollisionDetection: 1
   m_Constraints: 4
@@ -291,35 +291,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   visuals: {fileID: 2798731835246521459}
   moveSpeed: 8
-  acceleration: 50
-  deceleration: 60
-  airControl: 0.5
+  climbSpeed: 5
   jumpForce: 12
-  jumpCutMultiplier: 0.5
-  fallMultiplier: 2
-  coyoteTime: 0.1
-  jumpBufferTime: 0.1
+  wallJumpForce: 10
+  wallSlideSpeed: 2
+  ledgeClimbHeight: 1.5
+  ledgeClimbDuration: 0.25
   groundCheck: {fileID: 7529873357302839190}
-  groundCheckRadius: 0.2
+  frontCheck: {fileID: 960114814007333319}
+  backCheck: {fileID: 2114845443083082345}
+  ledgeCheck: {fileID: 7254293873169005036}
+  topCheck: {fileID: 7297591610195329502}
+  checkRadius: 0.2
   groundLayer:
     serializedVersion: 2
     m_Bits: 64
-  frontCheck: {fileID: 960114814007333319}
-  backCheck: {fileID: 2114845443083082345}
-  wallCheckRadius: 0.2
-  climbableLayer:
+  wallLayer:
     serializedVersion: 2
     m_Bits: 128
-  climbSpeed: 5
-  wallJumpForce: 10
-  wallJumpLockTime: 0.2
-  wallSlideSpeed: 2
-  ledgeCheck: {fileID: 7254293873169005036}
-  ledgeCheckRadius: 0.4
-  ledgeClimbHeight: 1.5
-  ledgeClimbDuration: 0.25
-  topCheck: {fileID: 7297591610195329502}
-  topCheckRadius: 0.4
 --- !u!1 &5057800551406337084
 GameObject:
   m_ObjectHideFlags: 0
@@ -345,7 +334,7 @@ Transform:
   m_GameObject: {fileID: 5057800551406337084}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.355, y: 0, z: 0}
+  m_LocalPosition: {x: 0.455, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -423,7 +412,7 @@ CapsuleCollider2D:
   m_GameObject: {fileID: 6417894509503087524}
   m_Enabled: 1
   m_Density: 1
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 6200000, guid: 294325acd4627a244a9a8cb2b268fff8, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
