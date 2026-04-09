@@ -10,7 +10,8 @@ public class PlayerMovement : MonoBehaviour
         Climbing,
         WallSliding,
         LedgeHold,
-        LedgeClimb
+        LedgeClimb,
+        Rope
     }
 
     private MovementState state;
@@ -35,6 +36,15 @@ public class PlayerMovement : MonoBehaviour
     [Header("Ledge")]
     public float ledgeClimbHeight = 1.5f;
     public float ledgeClimbDuration = 0.25f;
+
+    [Header("Rope")]
+    public LayerMask ropeLayer;
+    public Transform ropeCheck;
+    public float ropeCheckRadius = 0.5f;
+
+    private RopeSegment currentRopeSegment;
+    private RopeClimbable currentRope;
+    private float ropeClimbTimer = 0f;
 
     [Header("Checks")]
     public Transform groundCheck;
@@ -112,6 +122,14 @@ public class PlayerMovement : MonoBehaviour
         wallBack = Physics2D.OverlapCircle(backCheck.position, checkRadius, wallLayer);
         wall = (wallFront || wallBack) && wallDetachTimer <= 0f && wallJumpLockTimer <= 0f;
 
+        Collider2D ropeHit = Physics2D.OverlapCircle(ropeCheck.position, ropeCheckRadius, ropeLayer);
+        RopeSegment nearbyRopeSegment = null;
+
+        if (ropeHit != null)
+        {
+            nearbyRopeSegment = ropeHit.GetComponent<RopeSegment>();
+        }
+
         bool headClear = !Physics2D.OverlapCircle(ledgeCheck.position, checkRadius, groundLayer);
         bool ledgeClear = !Physics2D.OverlapCircle(topCheck.position, checkRadius, groundLayer);
 
@@ -171,6 +189,22 @@ public class PlayerMovement : MonoBehaviour
                 rb.gravityScale = 4f;
             }
 
+            return;
+        }
+
+        // ================= Rope State =================
+
+        if (state == MovementState.Rope)
+        {
+            HandleRopeState();
+            return;
+        }
+
+        // ================= Rope Toggle =================
+
+        if (state != MovementState.Rope && nearbyRopeSegment != null && Input.GetKeyDown(KeyCode.E))
+        {
+            AttachToRope(nearbyRopeSegment);
             return;
         }
 
@@ -321,6 +355,102 @@ public class PlayerMovement : MonoBehaviour
                 originalScale.y,
                 originalScale.z
             );
+        }
+    }
+
+    void AttachToRope(RopeSegment segment)
+    {
+        currentRopeSegment = segment;
+        currentRope = segment.rope;
+        state = MovementState.Rope;
+
+        rb.gravityScale = 0f;
+        rb.velocity = Vector2.zero;
+    }
+
+    void DetachFromRope(Vector2 launchVelocity)
+    {
+        state = MovementState.Normal;
+        rb.gravityScale = 4f;
+        rb.velocity = launchVelocity;
+
+        currentRopeSegment = null;
+        currentRope = null;
+    }
+
+    void HandleRopeState()
+    {
+        if (currentRopeSegment == null || currentRope == null)
+        {
+            state = MovementState.Normal;
+            rb.gravityScale = 4f;
+            return;
+        }
+
+        // Snap player to rope segment
+        Vector2 targetPos = (Vector2)currentRopeSegment.transform.position + currentRope.playerOffset;
+        rb.position = targetPos;
+
+        // Match rope momentum
+        rb.velocity = currentRopeSegment.Body.velocity;
+
+        // Swing rope left/right
+        if (Mathf.Abs(moveInput) > 0.1f)
+        {
+            currentRopeSegment.Body.AddForce(Vector2.right * moveInput * currentRope.swingForce);
+        }
+
+        // Climb up/down rope
+        if (ropeClimbTimer > 0f)
+        {
+            ropeClimbTimer -= Time.deltaTime;
+        }
+
+        if (ropeClimbTimer <= 0f && Mathf.Abs(climbInput) > 0.1f)
+        {
+            int direction = climbInput > 0 ? 1 : -1;
+            RopeSegment nextSegment = currentRope.GetNextSegment(currentRopeSegment, direction);
+
+            if (nextSegment != null)
+            {
+                currentRopeSegment = nextSegment;
+                ropeClimbTimer = currentRope.climbStepDelay;
+            }
+        }
+
+        // Jump off rope with rope momentum
+        if (Input.GetButtonDown("Jump"))
+        {
+            float jumpDir = 0f;
+
+            if (Mathf.Abs(moveInput) > 0.1f)
+                jumpDir = Mathf.Sign(moveInput);
+            else
+                jumpDir = Mathf.Sign(visuals.localScale.x);
+
+            Vector2 inheritedVelocity = currentRopeSegment.Body.velocity;
+            Vector2 launchVelocity = inheritedVelocity + new Vector2(
+                jumpDir * currentRope.jumpHorizontalForce,
+                currentRope.jumpVerticalForce
+            );
+
+            DetachFromRope(launchVelocity);
+            return;
+        }
+
+        // Drop from rope
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            DetachFromRope(currentRopeSegment.Body.velocity);
+        }
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        if (ropeCheck != null)
+        {
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireSphere(ropeCheck.position, ropeCheckRadius);
         }
     }
 }
