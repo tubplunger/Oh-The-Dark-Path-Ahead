@@ -4,225 +4,237 @@ using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
+    private enum MovementState
+    {
+        Normal,
+        Climbing,
+        WallSliding,
+        LedgeHold,
+        LedgeClimb
+    }
+
+    private MovementState state;
+
+    [Header("Visuals")]
+    public Transform visuals;
+    private Vector3 originalScale;
+
     [Header("Movement")]
     public float moveSpeed = 8f;
-    public float acceleration = 50f;
-    public float deceleration = 60f;
-    public float airControl = 0.5f;
+    public float climbSpeed = 5f;
 
     [Header("Jump")]
     public float jumpForce = 12f;
-    public float jumpCutMultiplier = 0.5f;
-    public float fallMultiplier = 2f;
-
-    [Header("Coyote Time")]
-    public float coyoteTime = 0.1f;
-    private float coyoteTimeCounter;
-
-    [Header("Jump Buffer")]
-    public float jumpBufferTime = 0.1f;
-    private float jumpBufferCounter;
-
-    [Header("Ground Check")]
-    public Transform groundCheck;
-    public float groundCheckRadius = 0.2f;
-    public LayerMask groundLayer;
-
-    [Header("Wall Climbing")]
-    public Transform frontCheck;
-    public Transform backCheck;
-    public float wallCheckRadius = 0.2f;
-    public LayerMask climbableLayer;
-
-    public float climbSpeed = 5f;
     public float wallJumpForce = 10f;
 
-    [Header("Wall Jump Control")]
-    public float wallJumpLockTime = 0.2f;
-    private float wallJumpLockCounter;
+    [Header("Wall Slide")]
+    public float wallSlideSpeed = 2f;
+
+    [Header("Ledge")]
+    public float ledgeClimbHeight = 1.5f;
+    public float ledgeClimbDuration = 0.25f;
+
+    [Header("Checks")]
+    public Transform groundCheck;
+    public Transform frontCheck;
+    public Transform backCheck;
+    public Transform ledgeCheck;
+    public Transform topCheck;
+
+    public float checkRadius = 0.2f;
+
+    public LayerMask groundLayer;
+    public LayerMask wallLayer;
 
     private Rigidbody2D rb;
 
     private float moveInput;
-    private bool isGrounded;
+    private float climbInput;
 
-    private bool isTouchingWallFront;
-    private bool isTouchingWallBack;
-    private bool isTouchingWall;
+    private bool grounded;
+    private bool wallFront;
+    private bool wallBack;
+    private bool wall;
 
-    private bool isClimbing;
-
-    private float currentClimbSpeed;
+    private Vector3 ledgeStart;
+    private Vector3 ledgeEnd;
+    private float ledgeT;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        originalScale = visuals.localScale;
+        state = MovementState.Normal;
     }
 
     void Update()
     {
-        // INPUT
+        Debug.Log("Vel: " + rb.velocity);
+
+        rb.gravityScale = (state == MovementState.Climbing) ? 0f : 4f;
+
         moveInput = Input.GetAxisRaw("Horizontal");
+        climbInput = Input.GetAxisRaw("Vertical");
 
-        // GROUND CHECK
-        isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+        grounded = Physics2D.OverlapCircle(groundCheck.position, checkRadius, groundLayer);
 
-        // WALL CHECK
-        isTouchingWallFront = Physics2D.OverlapCircle(frontCheck.position, wallCheckRadius, climbableLayer);
-        isTouchingWallBack = Physics2D.OverlapCircle(backCheck.position, wallCheckRadius, climbableLayer);
-        isTouchingWall = isTouchingWallFront || isTouchingWallBack;
+        wallFront = Physics2D.OverlapCircle(frontCheck.position, checkRadius, wallLayer);
+        wallBack = Physics2D.OverlapCircle(backCheck.position, checkRadius, wallLayer);
+        wall = wallFront || wallBack;
 
-        // COYOTE TIME
-        if (isGrounded)
-            coyoteTimeCounter = coyoteTime;
-        else
-            coyoteTimeCounter -= Time.deltaTime;
+        bool headClear = !Physics2D.OverlapCircle(ledgeCheck.position, checkRadius, groundLayer);
+        bool ledgeClear = !Physics2D.OverlapCircle(topCheck.position, checkRadius, groundLayer);
 
-        // JUMP BUFFER
-        if (Input.GetButtonDown("Jump"))
-            jumpBufferCounter = jumpBufferTime;
-        else
-            jumpBufferCounter -= Time.deltaTime;
+        bool canLedge =
+            wall &&
+            !grounded &&
+            rb.velocity.y <= 0f &&
+            headClear &&
+            ledgeClear &&
+            state != MovementState.LedgeHold &&
+            state != MovementState.LedgeClimb;
 
-        // START / STOP CLIMBING
-        if (Input.GetKeyDown(KeyCode.E) && isTouchingWall)
+        // ================= LEDGE =================
+        if (canLedge)
         {
-            isClimbing = !isClimbing;
+            state = MovementState.LedgeHold;
+            rb.velocity = Vector2.zero;
+            rb.gravityScale = 0f;
+            return;
         }
 
-        // AUTO EXIT CLIMB
-        if (!isTouchingWall)
+        if (state == MovementState.LedgeHold)
         {
-            isClimbing = false;
+            if (Input.GetKeyDown(KeyCode.W))
+            {
+                state = MovementState.LedgeClimb;
+                ledgeT = 0f;
+
+                ledgeStart = transform.position;
+                ledgeEnd = transform.position + new Vector3(
+                    -Mathf.Sign(visuals.localScale.x),
+                    ledgeClimbHeight,
+                    0f
+                );
+            }
+
+            if (Input.GetKeyDown(KeyCode.S))
+            {
+                state = MovementState.Normal;
+                rb.gravityScale = 4f;
+            }
+
+            return;
         }
 
-        // JUMP (NORMAL)
-        if (!isClimbing && jumpBufferCounter > 0f && coyoteTimeCounter > 0f)
+        if (state == MovementState.LedgeClimb)
         {
-            Jump();
-            jumpBufferCounter = 0f;
+            ledgeT += Time.deltaTime / ledgeClimbDuration;
+            transform.position = Vector3.Lerp(ledgeStart, ledgeEnd, ledgeT);
+
+            if (ledgeT >= 1f)
+            {
+                state = MovementState.Normal;
+                rb.gravityScale = 4f;
+            }
+
+            return;
         }
 
-        // WALL JUMP
-        if (isClimbing && Input.GetButtonDown("Jump"))
+        // ================= CLIMB TOGGLE =================
+        if (Input.GetKeyDown(KeyCode.E) && wall && !grounded)
         {
-            isClimbing = false;
-
-            float direction = isTouchingWallFront ? -1 : 1;
-            rb.velocity = new Vector2(direction * wallJumpForce, jumpForce);
-
-            wallJumpLockCounter = wallJumpLockTime;
+            state = (state == MovementState.Climbing)
+                ? MovementState.Normal
+                : MovementState.Climbing;
         }
 
-        // VARIABLE JUMP HEIGHT
-        if (Input.GetButtonUp("Jump") && rb.velocity.y > 0)
+        // ================= CLIMB =================
+        if (state == MovementState.Climbing)
         {
-            rb.velocity = new Vector2(rb.velocity.x, rb.velocity.y * jumpCutMultiplier);
-        }
-
-        // CLIMBING MOVEMENT
-        if (isClimbing)
-        {
+            // Disable gravity while climbing
             rb.gravityScale = 0f;
 
-            float vertical = Input.GetAxisRaw("Vertical");
-            rb.velocity = new Vector2(0f, vertical * currentClimbSpeed);
+            // ONLY vertical movement
+            rb.velocity = new Vector2(rb.velocity.x, climbInput * climbSpeed);
+
+            // If no input → start sliding
+            if (Mathf.Abs(climbInput) < 0.1f)
+            {
+                state = MovementState.WallSliding;
+            }
+
+            // If we lose the wall → fall
+            if (!wall)
+            {
+                state = MovementState.Normal;
+                rb.gravityScale = 4f;
+            }
+
+            return;
         }
-        else
+
+        // ================= WALL SLIDE =================
+        if (wall && !grounded && rb.velocity.y < 0 && state == MovementState.Normal)
+        {
+            state = MovementState.WallSliding;
+        }
+
+        if (state == MovementState.WallSliding)
         {
             rb.gravityScale = 4f;
-        }
 
-        // WALL JUMP LOCK TIMER 
-        if (wallJumpLockCounter > 0)
-        {
-            wallJumpLockCounter -= Time.deltaTime;
-        }
-    }
-
-    void FixedUpdate()
-    {
-        if (!isClimbing)
-        {
-            if (wallJumpLockCounter <= 0)
+            // Let gravity do the work, just clamp fall speed
+            if (rb.velocity.y < -wallSlideSpeed)
             {
-                Move();
+                rb.velocity = new Vector2(rb.velocity.x, -wallSlideSpeed);
             }
 
-            ApplyBetterGravity();
-        }
-    }
-
-    void Move()
-    {
-        float targetSpeed = moveInput * moveSpeed;
-        float speedDiff = targetSpeed - rb.velocity.x;
-
-        float accelRate = (Mathf.Abs(targetSpeed) > 0.01f)
-            ? acceleration
-            : deceleration;
-
-        if (!isGrounded)
-            accelRate *= airControl;
-
-        float movement = speedDiff * accelRate;
-
-        rb.AddForce(Vector2.right * movement);
-    }
-
-    void Jump()
-    {
-        rb.velocity = new Vector2(rb.velocity.x, jumpForce);
-    }
-
-    void ApplyBetterGravity()
-    {
-        if (rb.velocity.y < 0)
-        {
-            rb.velocity += Vector2.up * Physics2D.gravity.y * (fallMultiplier - 1) * Time.fixedDeltaTime;
-        }
-    }
-
-    void LateUpdate()
-    {
-        HandleClimbSurface();
-    }
-
-    void HandleClimbSurface()
-    {
-        currentClimbSpeed = climbSpeed;
-
-        Collider2D wallCollider = Physics2D.OverlapCircle(frontCheck.position, wallCheckRadius, climbableLayer);
-
-        if (wallCollider != null)
-        {
-            ClimbableSurface surface = wallCollider.GetComponent<ClimbableSurface>();
-
-            if (surface != null)
+            // Wall jump
+            if (Input.GetButtonDown("Jump"))
             {
-                currentClimbSpeed = climbSpeed * surface.climbSpeedMultiplier;
+                state = MovementState.Normal;
+
+                float dir = wallFront ? -1 : 1;
+                rb.velocity = new Vector2(dir * wallJumpForce, jumpForce);
+                return;
+            }
+
+            // Climb again
+            if (Mathf.Abs(climbInput) > 0.1f)
+            {
+                state = MovementState.Climbing;
+                return;
+            }
+
+            // Leave wall
+            if (!wall || grounded)
+            {
+                state = MovementState.Normal;
             }
         }
-    }
 
-    void OnDrawGizmosSelected()
-    {
-        if (groundCheck != null)
+        // ================= NORMAL =================
+        if (state == MovementState.Normal)
         {
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+            float targetX = moveInput * moveSpeed;
+
+            rb.velocity = new Vector2(targetX, rb.velocity.y);
+
+            if (Input.GetButtonDown("Jump") && grounded)
+            {
+                rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+            }
         }
 
-        if (frontCheck != null)
+        // ================= FLIP =================
+        if (moveInput != 0)
         {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawWireSphere(frontCheck.position, wallCheckRadius);
-        }
-
-        if (backCheck != null)
-        {
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(backCheck.position, wallCheckRadius);
+            visuals.localScale = new Vector3(
+                Mathf.Sign(moveInput) * Mathf.Abs(originalScale.x),
+                originalScale.y,
+                originalScale.z
+            );
         }
     }
 }
