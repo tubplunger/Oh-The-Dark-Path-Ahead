@@ -9,6 +9,8 @@ public class RopeClimbable : MonoBehaviour
     public float climbStepDelay = 0.12f;
     public float jumpHorizontalForce = 8f;
     public float jumpVerticalForce = 10f;
+    public float maxSwingSpeed = 4f;
+    
 
     [Header("Player Snap")]
     public Vector2 playerOffset = new Vector2(0f, 0f);

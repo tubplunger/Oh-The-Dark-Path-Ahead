@@ -366,6 +366,8 @@ public class PlayerMovement : MonoBehaviour
 
         rb.gravityScale = 0f;
         rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+        ropeClimbTimer = 0f;
     }
 
     void DetachFromRope(Vector2 launchVelocity)
@@ -387,17 +389,29 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
 
-        // Snap player to rope segment
+        // Snap player directly to rope segment
         Vector2 targetPos = (Vector2)currentRopeSegment.transform.position + currentRope.playerOffset;
         rb.position = targetPos;
 
-        // Match rope momentum
-        rb.velocity = currentRopeSegment.Body.velocity;
+        // Keep player stable while attached
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+        rb.gravityScale = 0f;
 
-        // Swing rope left/right
+        // Swing rope left/right only when player is actually pushing
         if (Mathf.Abs(moveInput) > 0.1f)
         {
-            currentRopeSegment.Body.AddForce(Vector2.right * moveInput * currentRope.swingForce);
+            float horizontalVel = currentRopeSegment.Body.velocity.x;
+            float desiredDirection = Mathf.Sign(moveInput);
+
+            if (Mathf.Abs(horizontalVel) < currentRope.maxSwingSpeed ||
+                Mathf.Sign(horizontalVel) != desiredDirection)
+            {
+                currentRopeSegment.Body.AddForce(
+                    Vector2.right * moveInput * currentRope.swingForce,
+                    ForceMode2D.Force
+                );
+            }
         }
 
         // Climb up/down rope
@@ -411,7 +425,7 @@ public class PlayerMovement : MonoBehaviour
             int direction = climbInput > 0 ? 1 : -1;
             RopeSegment nextSegment = currentRope.GetNextSegment(currentRopeSegment, direction);
 
-            if (nextSegment != null)
+            if (nextSegment != null && nextSegment != currentRopeSegment)
             {
                 currentRopeSegment = nextSegment;
                 ropeClimbTimer = currentRope.climbStepDelay;
