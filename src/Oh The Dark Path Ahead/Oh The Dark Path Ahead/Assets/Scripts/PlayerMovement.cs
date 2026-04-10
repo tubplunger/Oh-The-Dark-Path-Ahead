@@ -91,7 +91,7 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        Debug.Log("State: " + state);
+        //Debug.Log("State: " + state);
 
         if (ledgeCooldownTimer > 0)
         {
