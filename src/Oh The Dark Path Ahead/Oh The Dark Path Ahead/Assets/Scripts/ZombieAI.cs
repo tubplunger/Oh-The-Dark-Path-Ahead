@@ -41,6 +41,10 @@ public class ZombieAI : MonoBehaviour
     [Header("Target")]
     public Transform playerTarget;
 
+    [Header("Animation")]
+    public Animator animator;
+    public SpriteRenderer spriteRenderer;
+
     private Rigidbody2D rb;
     private AIState currentState = AIState.Patrol;
 
@@ -54,9 +58,22 @@ public class ZombieAI : MonoBehaviour
 
     private int moveDirection = 1;
 
+    private float currentMoveSpeed;
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+
+        if (animator == null)
+        {
+            animator = GetComponent<Animator>();
+        }
+
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = GetComponent<SpriteRenderer>();
+        }
+
         stateTimer = patrolTime;
     }
 
@@ -67,6 +84,7 @@ public class ZombieAI : MonoBehaviour
         UpdatePlayerDetection();
         UpdateStateMachine();
         UpdateFacing();
+        UpdateAnimation();
     }
 
     private void FixedUpdate()
@@ -162,10 +180,12 @@ public class ZombieAI : MonoBehaviour
         {
             case AIState.Idle:
                 rb.velocity = new Vector2(0f, rb.velocity.y);
+                currentMoveSpeed = 0f;
                 break;
 
             case AIState.Patrol:
                 rb.velocity = new Vector2(moveDirection * moveSpeed, rb.velocity.y);
+                currentMoveSpeed = Mathf.Abs(rb.velocity.x);
                 break;
 
             case AIState.Chase:
@@ -180,6 +200,7 @@ public class ZombieAI : MonoBehaviour
                 }
 
                 rb.velocity = new Vector2(moveDirection * chaseSpeed, rb.velocity.y);
+                currentMoveSpeed = Mathf.Abs(rb.velocity.x);
                 break;
         }
     }
@@ -245,6 +266,18 @@ public class ZombieAI : MonoBehaviour
             transform.localScale.y,
             transform.localScale.z
         );
+    }
+
+    private void UpdateAnimation()
+    {
+        if (animator == null)
+        {
+            return;
+        }
+
+        animator.SetFloat("Speed", currentMoveSpeed);
+        animator.SetBool("Grounded", isGrounded);
+        animator.SetFloat("VerticalVelocity", rb.velocity.y);
     }
 
     private void OnDrawGizmosSelected()
